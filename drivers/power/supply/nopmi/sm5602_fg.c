@@ -1295,6 +1295,7 @@ static int fg_get_property(struct power_supply *psy,
 		if (val->intval < 0)
 			val->intval = 0;
 
+		pr_info("fg PROP_CAPACITY_STATUS: %d\n", val->intval);
 		mutex_unlock(&sm->data_lock);
 		if (sm->shutdown_delay_enable) {
 			if (val->intval == 0) {
@@ -1648,9 +1649,18 @@ static const struct attribute_group fg_attr_group = {
 
 static void battery_soc_smooth_tracking_new(struct sm_fg_chip *sm)
 {
-	static int system_soc;
+	static int system_soc, raw_soc;
 
-	system_soc = sm->param.batt_raw_soc * 10;
+	/* Map system_soc value according to raw_soc */
+	raw_soc = sm->param.batt_raw_soc * 10;
+	if (raw_soc >= 9700) {
+		system_soc = 100;
+	} else {
+		system_soc = ((raw_soc + 96) / 97);
+		if (system_soc > 99)
+			system_soc = 99;
+	}
+	pr_info("smooth_tracking: raw_soc:%d, system_soc:%d\n", raw_soc, system_soc);
 
 	sm->param.batt_soc = system_soc * 10;
 }
