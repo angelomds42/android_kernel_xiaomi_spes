@@ -977,10 +977,8 @@ static void clear_buddies(struct cfs_rq *cfs_rq, struct sched_entity *se);
  * XXX: strictly: vd_i += N*r_i/w_i such that: vd_i > ve_i
  * this is probably good enough.
  */
-static void update_deadline(struct cfs_rq *cfs_rq, struct sched_entity *se, bool tick)
+static void update_deadline(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-	struct rq *rq = rq_of(cfs_rq);
-
 	if ((s64)(se->vruntime - se->deadline) < 0)
 		return;
 
@@ -1000,19 +998,10 @@ static void update_deadline(struct cfs_rq *cfs_rq, struct sched_entity *se, bool
 	/*
 	 * The task has consumed its request, reschedule.
 	 */
-	if (cfs_rq->nr_running < 2)
-		return;
-
-	if (!IS_ENABLED(CONFIG_PREEMPT_RT_FULL)) {
-		resched_curr(rq);
-	} else {
-		/* Did the task ignore the lazy reschedule request? */
-		if (tick && test_tsk_need_resched_lazy(rq->curr))
-			resched_curr(rq);
-		else
-			resched_curr_lazy(rq);
+	if (cfs_rq->nr_running > 1) {
+		resched_curr(rq_of(cfs_rq));
+		clear_buddies(cfs_rq, se);
 	}
-	clear_buddies(cfs_rq, se);
 }
 
 #include "pelt.h"
@@ -1124,7 +1113,7 @@ static void update_tg_load_avg(struct cfs_rq *cfs_rq)
 /*
  * Update the current task's runtime statistics.
  */
-static void __update_curr(struct cfs_rq *cfs_rq, bool tick)
+static void update_curr(struct cfs_rq *cfs_rq)
 {
 	struct sched_entity *curr = cfs_rq->curr;
 	u64 now = rq_clock_task(rq_of(cfs_rq));
@@ -1146,7 +1135,7 @@ static void __update_curr(struct cfs_rq *cfs_rq, bool tick)
 	schedstat_add(cfs_rq->exec_clock, delta_exec);
 
 	curr->vruntime += calc_delta_fair(delta_exec, curr);
-	update_deadline(cfs_rq, curr, tick);
+	update_deadline(cfs_rq, curr);
 	update_min_vruntime(cfs_rq);
 
 	if (entity_is_task(curr)) {
@@ -1158,11 +1147,6 @@ static void __update_curr(struct cfs_rq *cfs_rq, bool tick)
 	}
 
 	account_cfs_rq_runtime(cfs_rq, delta_exec);
-}
-
-static inline void update_curr(struct cfs_rq *cfs_rq)
-{
-	__update_curr(cfs_rq, false);
 }
 
 static void update_curr_fair(struct rq *rq)
@@ -4881,7 +4865,7 @@ entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 	/*
 	 * Update run-time statistics of the 'current'.
 	 */
-	__update_curr(cfs_rq, true);
+	update_curr(cfs_rq);
 
 	/*
 	 * Ensure that runnable average is periodically updated.
